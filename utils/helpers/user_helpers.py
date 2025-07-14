@@ -9,6 +9,13 @@ def get_user_with_email(email: str, db: Session) -> User:
     return db.query(User).filter(User.email == email).first()
 
 
+def check_existing_phone_number(phone_number: str, db: Session) -> bool:
+    """
+    Check if a phone number is already registered
+    """
+    return db.query(User).filter(User.phone_number == phone_number).first() is not None
+
+
 def register_user(data: dict, db: Session) -> None:
     """
     Register a user in the database

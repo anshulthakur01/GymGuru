@@ -41,3 +41,20 @@ REGISTER_USER_TOOL_DECLARATION = {
         "required": ["full_name", "gender", "date_of_birth", "email", "phone_number", "address", "fitness_goal", "membership"],
     },
 }
+
+
+
+CHECK_EXISTING_PHONE_NUMBER_TOOL_DECLARATION = {
+    "name": "check_existing_phone_number",
+    "description": "Check if a phone number is already registered.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "phone_number": {
+                "type": "string",
+                "description": "Phone number to check.",
+            },
+        },
+        "required": ["phone_number"],
+    },
+}

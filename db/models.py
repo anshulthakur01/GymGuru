@@ -2,8 +2,6 @@ from db.database import engine, Base
 from sqlalchemy import Column, Integer, String, Enum, Date, Text, JSON, ForeignKey
 from utils.enums import Gender, FitnessGoal, MemberShip
 from db.common_models import TimestampMixin
-from sqlalchemy.orm import declarative_base
-
 
 
 class User(Base, TimestampMixin):
@@ -13,9 +11,9 @@ class User(Base, TimestampMixin):
     full_name = Column(String, index=True)
     gender = Column(String, Enum(Gender))
     date_of_birth = Column(Date)
-    email = Column(String, unique=True, index=True)
-    phone_number = Column(String, unique=True, index=True)
-    address = Column(Text)
+    email = Column(String, nullable=True)
+    phone_number = Column(String, unique=True)
+    address = Column(Text, nullable=True)
     fitness_goal = Column(String, Enum(FitnessGoal))
     membership = Column(String, Enum(MemberShip))
 
