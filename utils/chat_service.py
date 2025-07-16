@@ -3,9 +3,9 @@ import json
 from google import genai
 from google.genai import types
 from google.genai import types
-from sqlalchemy.orm import Session
 
-from db.models import ChatHistory
+from db.database import get_db
+from db.models import ChatHistory, Chat
 from config import settings
 from utils.helpers import create_chat, register_user, check_existing_phone_number
 from utils.enums import FITNESS_GOAL_DESCRIPTIONS, MEMBERSHIP_DETAILS
@@ -46,11 +46,11 @@ class ChatService:
     Chat service for the application
     """
 
-    def __init__(self, operation: str, db: Session = None) -> None:
+    def __init__(self, operation: str) -> None:
         self.client = genai.Client(api_key=settings.GOOGLE_API_KEY)
         self.operation = operation
         self.history = []
-        self.db = db
+        self.db = next(get_db())
         self.chat_id = None
         self.function_call_mapping = {
             "register_user": register_user,
@@ -83,55 +83,58 @@ class ChatService:
         """
         Get the user message for the chat
         """
-        self.history.append(types.Content(role="user", parts=[types.Part.from_text(text=user_message)]))
+        last_message = self.db.query(ChatHistory).filter(ChatHistory.chat_id == self.chat_id).order_by(ChatHistory.message_order.desc()).first()
+        next_order = (last_message.message_order + 1) if last_message else 0
+        self.chat_history_obj = ChatHistory(message=user_message, chat_id=self.chat_id, message_order=next_order)
+        self.db.add(self.chat_history_obj)
+        self.db.commit()
         return self.get_previous_history()
-    
+
     def get_previous_history(self):
-        """" 
-        Get centralized chat history 
         """
-        # keep only last 3 messages
-        self.history = self.history[-3:len(self.history)]
+        Get the last 3 messages from database.
+        """
+        if self.chat_id:
+            # Clear history to prevent large memory occupency on long conversation
+            self.history = []
+            # Fetch last 3 messages from the database
+            messages = (
+                self.db.query(ChatHistory)
+                .filter(ChatHistory.chat_id == self.chat_id)
+                .order_by(ChatHistory.message_order.desc())
+                .limit(3)
+                .all()
+            )
+            for msg in reversed(messages):  # reverse to maintain chronological order
+                if msg.message: 
+                    self.history.append(types.Content(role="user", parts=[types.Part.from_text(text=msg.message)]))
+                if msg.response:
+                    self.history.append(types.Content(role="model", parts=[types.Part.from_text(text=msg.response)]))
         return self.history
 
-    def _create_chat_if_not_exists(self) -> None:
+    def create_new_chat(self) -> None:
         """
-        Create a new chat if it doesn't exist
+        Create a new chat
         """
-        if self.db and self.chat_id is None:
-            chat_data = {"title": f"GymGuru Registration Chat - {self.operation}"}
-            chat = create_chat(chat_data, self.db)
-            self.chat_id = chat.id
+        chat_data = {"title": f"GymGuru Registration Chat - {self.operation}"}
+        chat = create_chat(chat_data, self.db)
+        self.chat_id = chat.id
 
-    def _store_chat_history(self, user_message: str, ai_response: str) -> None:
+    def _update_chat_history(self, user_message: str, ai_response: str) -> None:
         """
         Store chat history in the database
         """
-        if self.db and self.chat_id:
-            # Get the next message order
-            last_message = self.db.query(ChatHistory).filter(ChatHistory.chat_id == self.chat_id).order_by(ChatHistory.message_order.desc()).first()
-            next_order = (last_message.message_order + 1) if last_message else 0
+        self.chat_history_obj.response = self.clean_response(ai_response)
+        self.chat_history_obj.chat_id=self.chat_id
+        self.db.commit()
 
-            chat_history = ChatHistory(
-                message=user_message,
-                response=self.clean_response(ai_response),
-                chat_id=self.chat_id,
-                message_order=next_order
-            )
-            self.db.add(chat_history)
-            self.db.commit()
-
-    def generate_response(self, data: str) -> str:
+    def generate_response(self, data: dict) -> str:
         """
         Generate the response for the chat
         """
-        data = json.loads(data)
         user_message = data.get("message")
         if not user_message:
             raise ValueError("User message is required")
-
-        # Create chat if not exists
-        self._create_chat_if_not_exists()
 
         user_message = self.get_user_message(user_message)
 
@@ -167,7 +170,7 @@ class ChatService:
         self.history.append(types.Content(role="model", parts=[types.Part.from_text(text=response.text)]))
 
         # Store chat history - pass the original user message string and AI response text
-        self._store_chat_history(data.get("message"), response.text)
+        self._update_chat_history(data.get("message"), response.text)
 
         return self.clean_response(response.text)
 
@@ -209,7 +212,7 @@ class ChatService:
         except Exception as e:
             print("Error in function call: ", e)
             return f"Show only human readable error message: Error in function call: {str(e)}"
-    
+
     def get_phone_number_check_response(self, data: dict) -> str:
         """
         Get the response for the phone number check
@@ -223,3 +226,16 @@ class ChatService:
         except Exception as e:  
             print("Error in function call: ", e)
             return f"Show only human readable error message: Error in function call: {str(e)}"
+    
+    def set_chat_id(self, chat_id):
+        """ Create new chat if chat_id is none """
+
+        if chat_id:
+            self.chat_id = chat_id
+        else:
+            self.create_new_chat()
+
+    def process_response(self, data: str):
+        data_dict = json.loads(data)
+        self.set_chat_id(data_dict.get("chat_id"))
+        return self.generate_response(data_dict)

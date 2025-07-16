@@ -2,7 +2,6 @@ from fastapi import FastAPI, WebSocket, Request, Depends, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-import json
 
 from utils.chat_service import ChatService
 from db.database import get_db
@@ -43,27 +42,12 @@ def get_chat_history(chat_id: int, db: Session = Depends(get_db)):
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    # Get database session
-    db = next(get_db())
-    
+
     # Initialize chat service without creating a chat yet
-    chat_service = ChatService(operation="registeration", db=db)
-    chat_service.chat_id = None  # No chat created yet
+    chat_service = ChatService(operation="registeration")
 
-    try:
-        while True:
-            data = await websocket.receive_text()
-
-            # Handle regular message - create chat if it doesn't exist
-            if chat_service.chat_id is None:
-                # Create a new chat only when user sends their first message
-                chat = Chat(title="New GymGuru Registration")
-                db.add(chat)
-                db.commit()
-                db.refresh(chat)
-                chat_service.chat_id = chat.id
-            
-            response = chat_service.generate_response(data)
-            await websocket.send_text(response)
-    finally:
-        db.close()
+    while True:
+        data = await websocket.receive_text()
+        print("Data received from websockets :", data)
+        response = chat_service.process_response(data)
+        await websocket.send_text(response)

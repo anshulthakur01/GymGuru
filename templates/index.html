@@ -702,9 +702,10 @@
                 }
 
                 currentChatId = chatId;
-                
+
                 // Clear messages container
                 messagesContainer.innerHTML = '';
+                messagesContainer.setAttribute("data-chat-id", chatId);
                 
                 // Load chat history via API
                 try {
@@ -760,7 +761,8 @@
                         </div>
                     </div>
                 `;
-                
+                messagesContainer.setAttribute("data-chat-id", null);
+
                 // Reset status bar
                 completedCount.textContent = '0';
                 totalQuestions.textContent = 'N/A';
@@ -918,9 +920,14 @@
 
                     // Show typing indicator
                     const typingIndicator = showTypingIndicator();
+                    const messageObj = {
+                        message: message,
+                        chat_id: Number(messagesContainer.dataset.chatId)
+                    }
 
+                    console.log("messageObj =======", messageObj)
                     // Send message to WebSocket
-                    ws.send(JSON.stringify({ message: message }));
+                    ws.send(JSON.stringify(messageObj));
                 }
             }
 
